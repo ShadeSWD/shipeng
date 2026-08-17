@@ -17,8 +17,9 @@
   var DEF = { gtPi: 18, gtT3: 1200, gtEk: 0.86, gtEt: 0.89, gtT1: 15 };
 
   function fmt(x, d) {
-    var v = Number(x).toFixed(d === undefined ? 0 : d);
-    return v.replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    var v = Number(x).toFixed(d === undefined ? 0 : d).split('.');
+    v[0] = v[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return v.join(',');
   }
   function row(f, sub, res) {
     return '<div class="calc-row"><span class="f">' + f + '</span> = '
