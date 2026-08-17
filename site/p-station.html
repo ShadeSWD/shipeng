@@ -3,34 +3,482 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Расчёт судовой электростанции</title>
-<meta name="description" content="Подбор числа и мощности генераторов по таблице потребителей.">
+<title>Разбор 8. Нагрузка судовой электростанции</title>
+<meta name="description" content="Расчёт нагрузки судовой электростанции табличным методом: коэффициенты загрузки и одновременности, потребляемая мощность по режимам работы судна, реактивная и полная мощность, коэффициент мощности и ток, выбор числа и мощности дизель-генераторов, проверка резерва и проверка на пуск наибольшего электродвигателя, аварийный дизель-генератор.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔧</text></svg>">
 <link rel="stylesheet" href="assets/style.css">
-<style>
-.tldr { background:#f2f6fb; border-left:4px solid #155e75; border-radius:0 10px 10px 0;
-  padding:10px 16px; margin:16px 0; font-size:15.5px; }
-.tldr ul { margin:6px 0 2px; padding-left:20px; }
-</style>
 </head>
 <body>
 <script src="assets/site.js" data-root="./" data-page="tasks"></script>
 <main class="wrap">
-  <h1>Расчёт судовой электростанции</h1>
-  <p class="lead">Подбор числа и мощности генераторов по таблице потребителей.</p>
+  <h1>Разбор 8. Нагрузка судовой электростанции</h1>
+  <p class="lead">Установленная мощность всех потребителей судна почти вдвое
+  больше мощности электростанции — и это нормально. Задача показывает, как из
+  списка механизмов получить честную расчётную нагрузку по каждому режиму
+  работы судна и как по ней выбрать число и мощность дизель-генераторов, не
+  забыв про резерв и про пуск самого мощного двигателя.</p>
+
   <div class="tldr">
-    <b>Что будет в этой главе.</b>
+    <h2>Коротко</h2>
     <ul>
-      <li>таблица потребителей по режимам работы судна</li>
-      <li>коэффициенты одновременности и загрузки</li>
-      <li>расчётная нагрузка по режимам</li>
-      <li>выбор числа и мощности генераторных агрегатов, резерв</li>
+      <li>Потребляемая из сети мощность механизма:
+      \(P = \dfrac{P_{\text{уст}}\,k_{\text{з}}\,k_{\text{о}}}{\eta}\) — КПД в
+      знаменателе, потому что из сети берётся больше, чем отдаётся на валу.</li>
+      <li>Расчётная нагрузка режима — сумма по столбцу плюс потери в кабельной
+      сети \(\Delta = 3\ldots5\;\%\); реактивная мощность считается по
+      \(\operatorname{tg}\varphi\) каждого потребителя, а не по среднему.</li>
+      <li>У прототипа установленная мощность 975 кВт, а расчётная нагрузка
+      режимов — от 466 до 667 кВт: коэффициент использования 0,48…0,68.</li>
+      <li>Определяющий режим — грузовые операции: \(P_{\text{р}} = 667\) кВт,
+      \(S_{\text{р}} = 757\) кВ·А, \(\cos\varphi = 0{,}88\), ток 1093 А.</li>
+      <li>Принято <b>три дизель-генератора по 800 кВт</b> (1000 кВ·А, 400 В,
+      50 Гц) плюс аварийный 200 кВт: загрузка работающего 58…83 %, резерв при
+      отказе любого одного обеспечен.</li>
+      <li>Проверка на пуск грузового насоса 75 кВт даёт провал напряжения 8 % —
+      меньше допустимых 15 %, генератор пуск выдерживает.</li>
     </ul>
   </div>
-  <p>Глава готовится: текст пишется по конспектам и методическим материалам
-  кафедры, схемы и числовые примеры делаются заново. Пока она не готова,
-  соседние главы курса уже доступны — их список в разделе
-  <a href="theory">«Теория»</a>.</p>
-  <p><a href="theory">← Оглавление курса</a></p>
+
+  <h2>Дано</h2>
+  <div class="given">
+    <p>Судно-прототип — фидерный контейнеровоз с розетками для рефрижераторных
+    контейнеров. Сеть трёхфазная <b>400 В, 50 Гц</b>, с изолированной
+    нейтралью. Потери в кабельной сети \(\Delta = 4\;\%\). Установленная
+    мощность потребителей — 975 кВт; перечень с паспортными КПД и
+    коэффициентами мощности приведён в таблице ниже.</p>
+    <p>Характерные режимы работы судна: <b>ходовой</b>, <b>маневровый</b>,
+    <b>стояночный без грузовых операций</b>, <b>грузовые операции</b> и
+    <b>аварийный</b> (питание от аварийного дизель-генератора).</p>
+    <p><b>Найти:</b> расчётную активную, реактивную и полную мощность каждого
+    режима, коэффициент мощности и ток; выбрать число и мощность генераторных
+    агрегатов; проверить резерв и пуск наиболее мощного электродвигателя.</p>
+  </div>
+
+  <h2>Решение</h2>
+
+  <div class="step">
+    <h3>Шаг 1. Что и почему делится на что</h3>
+    <p>Механизм с валом мощностью \(P_{\text{уст}}\) берёт из сети больше — на
+    величину потерь в электродвигателе. Из сети он берёт мощность не всегда и
+    не полностью: это учитывают два коэффициента.</p>
+    $$P = \frac{P_{\text{уст}}\,k_{\text{з}}\,k_{\text{о}}}{\eta}$$
+    <ul>
+      <li>\(k_{\text{з}}\) — <b>коэффициент загрузки</b>: какую долю
+      номинальной мощности механизм развивает в данном режиме. Насос,
+      подобранный с запасом, работает на 0,7…0,8 номинала; рулевая машина в
+      открытом море — на 0,3.</li>
+      <li>\(k_{\text{о}}\) — <b>коэффициент одновременности</b>: какая доля
+      группы однотипных механизмов работает одновременно. Из двух компрессоров
+      пускового воздуха обычно работает один, значит \(k_{\text{о}} = 0{,}5\).</li>
+      <li>\(\eta\) — КПД электродвигателя, 0,82…0,90 для судовых
+      асинхронных машин. Для нагревательных приборов и освещения \(\eta = 1\).</li>
+    </ul>
+    <p>Реактивную мощность считают по каждому потребителю отдельно, потому что
+    \(\cos\varphi\) у камбузной плиты и у насоса совершенно разные:</p>
+    $$Q = P\operatorname{tg}\varphi,\qquad
+      P_{\text{р}} = (1+\Delta)\sum_i P_i,\qquad
+      Q_{\text{р}} = (1+\Delta)\sum_i Q_i$$
+    <div class="note warn">Частая ошибка — сложить активные мощности, взять
+    средний \(\cos\varphi\) и получить \(S\). Так делать нельзя: полная
+    мощность складывается векторно. Правильный порядок — просуммировать
+    отдельно \(P\) и \(Q\), а уже из них получить \(S = \sqrt{P^2+Q^2}\) и
+    \(\cos\varphi = P/S\).</div>
+  </div>
+
+  <div class="step">
+    <h3>Шаг 2. Проверим одну строку целиком</h3>
+    <p>Насосы охлаждения главного двигателя в ходовом режиме: установленная
+    мощность двух насосов 60 кВт, \(\eta = 0{,}86\),
+    \(\cos\varphi = 0{,}84\), загрузка 0,80, одновременность 0,75 (второй насос
+    в резерве, но периодически включается).</p>
+    <div class="calc-row"><span class="f">\(P = P_{\text{уст}}k_{\text{з}}k_{\text{о}}/\eta\)</span> = <span style="color:#6b6b74">60·0,80·0,75/0,86</span> = <b>41,9 кВт</b></div>
+    <div class="calc-row"><span class="f">\(\operatorname{tg}\varphi = \sqrt{1/\cos^2\varphi - 1}\)</span> = <span style="color:#6b6b74">√(1/0,84² − 1)</span> = <b>0,646</b></div>
+    <div class="calc-row"><span class="f">\(Q = P\operatorname{tg}\varphi\)</span> = <span style="color:#6b6b74">41,9·0,646</span> = <b>27,1 квар</b></div>
+    <p>Так заполняется каждая строка каждого режима. Ниже — сводная таблица
+    прототипа; в столбцах режимов даны произведения
+    \(k_{\text{з}}k_{\text{о}}\) и полученная мощность.</p>
+  </div>
+
+  <div class="step">
+    <h3>Шаг 3. Таблица нагрузок по режимам</h3>
+    <div class="panel">
+      <table class="el">
+        <tr>
+          <th>Потребитель</th><th class="num">P<sub>уст</sub></th><th class="num">η</th><th class="num">cos φ</th>
+          <th class="num">ход</th><th class="num">манёвры</th><th class="num">стоянка</th><th class="num">груз. оп.</th>
+        </tr>
+        <tr><td>Рулевая машина (2 × 22)</td><td class="num">44</td><td class="num">0,85</td><td class="num">0,80</td>
+          <td class="num">9,1</td><td class="num">31,1</td><td class="num">—</td><td class="num">—</td></tr>
+        <tr><td>Брашпиль и швартовные лебёдки</td><td class="num">55</td><td class="num">0,84</td><td class="num">0,75</td>
+          <td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">23,6</td></tr>
+        <tr><td>Компрессоры пускового воздуха (2 × 18,5)</td><td class="num">37</td><td class="num">0,88</td><td class="num">0,82</td>
+          <td class="num">14,7</td><td class="num">29,4</td><td class="num">10,5</td><td class="num">17,7</td></tr>
+        <tr><td>Насосы охлаждения ГД</td><td class="num">60</td><td class="num">0,86</td><td class="num">0,84</td>
+          <td class="num">41,9</td><td class="num">55,8</td><td class="num">—</td><td class="num">—</td></tr>
+        <tr><td>Топливные, масляные насосы и сепараторы</td><td class="num">30</td><td class="num">0,82</td><td class="num">0,80</td>
+          <td class="num">20,5</td><td class="num">20,5</td><td class="num">11,0</td><td class="num">13,2</td></tr>
+        <tr><td>Вентиляторы машинного отделения (2 × 22)</td><td class="num">44</td><td class="num">0,88</td><td class="num">0,83</td>
+          <td class="num">40,0</td><td class="num">40,0</td><td class="num">8,8</td><td class="num">17,5</td></tr>
+        <tr class="pick"><td>Розетки рефрижераторных контейнеров</td><td class="num">400</td><td class="num">0,90</td><td class="num">0,90</td>
+          <td class="num">320,0</td><td class="num">320,0</td><td class="num">320,0</td><td class="num">320,0</td></tr>
+        <tr><td>Грузовые и балластные насосы (2 × 75)</td><td class="num">150</td><td class="num">0,88</td><td class="num">0,85</td>
+          <td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">144,9</td></tr>
+        <tr><td>Вентиляция и кондиционирование жилых помещений</td><td class="num">60</td><td class="num">0,87</td><td class="num">0,82</td>
+          <td class="num">38,6</td><td class="num">33,8</td><td class="num">38,6</td><td class="num">38,6</td></tr>
+        <tr><td>Камбуз и бытовое оборудование</td><td class="num">45</td><td class="num">1,00</td><td class="num">1,00</td>
+          <td class="num">13,5</td><td class="num">13,5</td><td class="num">14,4</td><td class="num">18,9</td></tr>
+        <tr><td>Освещение и слаботочные потребители</td><td class="num">35</td><td class="num">1,00</td><td class="num">0,95</td>
+          <td class="num">28,4</td><td class="num">31,5</td><td class="num">31,5</td><td class="num">33,2</td></tr>
+        <tr><td>Навигация, связь, автоматика</td><td class="num">15</td><td class="num">0,90</td><td class="num">0,85</td>
+          <td class="num">13,3</td><td class="num">16,7</td><td class="num">13,3</td><td class="num">13,3</td></tr>
+        <tfoot>
+          <tr><td>Сумма по потребителям Σ<i>P</i>, кВт</td><td class="num">975</td><td class="num">—</td><td class="num">—</td>
+            <td class="num">539,9</td><td class="num">592,3</td><td class="num">448,1</td><td class="num">640,9</td></tr>
+          <tr><td>Расчётная активная <i>P</i><sub>р</sub> = 1,04 Σ<i>P</i>, кВт</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+            <td class="num">562</td><td class="num">616</td><td class="num">466</td><td class="num">667</td></tr>
+          <tr><td>Расчётная реактивная <i>Q</i><sub>р</sub>, квар</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+            <td class="num">297</td><td class="num">334</td><td class="num">231</td><td class="num">360</td></tr>
+          <tr><td>Полная <i>S</i><sub>р</sub>, кВ·А</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+            <td class="num">635</td><td class="num">701</td><td class="num">520</td><td class="num">757</td></tr>
+        </tfoot>
+      </table>
+    </div>
+    <p>Расчёт полной мощности и тока для определяющего режима — грузовых
+    операций:</p>
+    <div class="calc-row"><span class="f">\(P_{\text{р}} = (1+\Delta)\sum P_i\)</span> = <span style="color:#6b6b74">1,04·640,9</span> = <b>667 кВт</b></div>
+    <div class="calc-row"><span class="f">\(Q_{\text{р}} = (1+\Delta)\sum Q_i\)</span> = <span style="color:#6b6b74">1,04·345,7</span> = <b>360 квар</b></div>
+    <div class="calc-row"><span class="f">\(S_{\text{р}} = \sqrt{P_{\text{р}}^2+Q_{\text{р}}^2}\)</span> = <span style="color:#6b6b74">√(667² + 360²)</span> = <b>757 кВ·А</b></div>
+    <div class="calc-row"><span class="f">\(\cos\varphi_{\text{р}} = P_{\text{р}}/S_{\text{р}}\)</span> = <span style="color:#6b6b74">667/757</span> = <b>0,881</b></div>
+    <div class="calc-row"><span class="f">\(I_{\text{р}} = \dfrac{S_{\text{р}}}{\sqrt{3}\,U}\)</span> = <span style="color:#6b6b74">757 000/(1,732·400)</span> = <b>1093 А</b></div>
+  </div>
+
+  <div class="panel">
+    <svg viewBox="0 0 640 330" class="geo-board" style="max-width:640px" role="img"
+         aria-label="Ранжированные полосы потребления мощности в ходовом режиме: розетки рефрижераторных контейнеров занимают почти шестьдесят процентов нагрузки">
+      <text x="320" y="20" text-anchor="middle" style="font:600 12px system-ui;fill:#16161a">Кто ест электроэнергию в ходовом режиме</text>
+      <line x1="220" y1="34" x2="220" y2="300" stroke="#16161a" stroke-width="1.4"/>
+      <rect x="220" y="40" width="340" height="18" fill="#b3382e" fill-opacity=".22" stroke="#b3382e" stroke-width="1.2"/>
+      <text x="214" y="53" text-anchor="end" style="font:11px system-ui;fill:#16161a">рефрижераторные розетки</text>
+      <text x="566" y="53" style="font:600 11px system-ui;fill:#b3382e">320 кВт</text>
+      <rect x="220" y="66" width="45" height="18" fill="#155e75" fill-opacity=".22" stroke="#155e75" stroke-width="1.2"/>
+      <text x="214" y="79" text-anchor="end" style="font:11px system-ui;fill:#16161a">насосы охлаждения ГД</text>
+      <text x="271" y="79" style="font:11px system-ui;fill:#6b6b74">41,9</text>
+      <rect x="220" y="92" width="43" height="18" fill="#155e75" fill-opacity=".22" stroke="#155e75" stroke-width="1.2"/>
+      <text x="214" y="105" text-anchor="end" style="font:11px system-ui;fill:#16161a">вентиляторы МО</text>
+      <text x="269" y="105" style="font:11px system-ui;fill:#6b6b74">40,0</text>
+      <rect x="220" y="118" width="41" height="18" fill="#155e75" fill-opacity=".22" stroke="#155e75" stroke-width="1.2"/>
+      <text x="214" y="131" text-anchor="end" style="font:11px system-ui;fill:#16161a">вентиляция жилых помещений</text>
+      <text x="267" y="131" style="font:11px system-ui;fill:#6b6b74">38,6</text>
+      <rect x="220" y="144" width="30" height="18" fill="#155e75" fill-opacity=".22" stroke="#155e75" stroke-width="1.2"/>
+      <text x="214" y="157" text-anchor="end" style="font:11px system-ui;fill:#16161a">освещение и слаботочные</text>
+      <text x="256" y="157" style="font:11px system-ui;fill:#6b6b74">28,4</text>
+      <rect x="220" y="170" width="22" height="18" fill="#155e75" fill-opacity=".22" stroke="#155e75" stroke-width="1.2"/>
+      <text x="214" y="183" text-anchor="end" style="font:11px system-ui;fill:#16161a">топливные и масляные насосы</text>
+      <text x="248" y="183" style="font:11px system-ui;fill:#6b6b74">20,5</text>
+      <rect x="220" y="196" width="16" height="18" fill="#155e75" fill-opacity=".22" stroke="#155e75" stroke-width="1.2"/>
+      <text x="214" y="209" text-anchor="end" style="font:11px system-ui;fill:#16161a">компрессоры воздуха</text>
+      <text x="242" y="209" style="font:11px system-ui;fill:#6b6b74">14,7</text>
+      <rect x="220" y="222" width="14" height="18" fill="#155e75" fill-opacity=".22" stroke="#155e75" stroke-width="1.2"/>
+      <text x="214" y="235" text-anchor="end" style="font:11px system-ui;fill:#16161a">камбуз и бытовое</text>
+      <text x="240" y="235" style="font:11px system-ui;fill:#6b6b74">13,5</text>
+      <rect x="220" y="248" width="14" height="18" fill="#155e75" fill-opacity=".22" stroke="#155e75" stroke-width="1.2"/>
+      <text x="214" y="261" text-anchor="end" style="font:11px system-ui;fill:#16161a">навигация и связь</text>
+      <text x="240" y="261" style="font:11px system-ui;fill:#6b6b74">13,3</text>
+      <rect x="220" y="274" width="10" height="18" fill="#155e75" fill-opacity=".22" stroke="#155e75" stroke-width="1.2"/>
+      <text x="214" y="287" text-anchor="end" style="font:11px system-ui;fill:#16161a">рулевая машина</text>
+      <text x="236" y="287" style="font:11px system-ui;fill:#6b6b74">9,1</text>
+      <text x="60" y="318" style="font:11px system-ui;fill:#6b6b74">на рефрижераторные контейнеры приходится 59 % всей нагрузки ходового режима</text>
+    </svg>
+    <div class="caption">Структура нагрузки объясняет, почему электростанция
+    контейнеровоза так велика по сравнению с сухогрузом того же размера: почти
+    две трети мощности потребляет груз, а не судно. Если рефрижераторных
+    контейнеров на борту нет, расчётная нагрузка ходового режима падает с 562
+    до 229 кВт, и хватило бы одного генератора вдвое меньшей мощности.</div>
+  </div>
+
+  <div class="step">
+    <h3>Шаг 4. Аварийный режим</h3>
+    <p>Аварийный источник электроэнергии питает только те потребители, без
+    которых невозможны безопасность людей и живучесть судна. Их состав задан
+    Правилами РС, часть XI, а не проектировщиком.</p>
+    <div class="panel">
+      <table class="el">
+        <tr><th>Аварийный потребитель</th><th class="num">P, кВт</th><th>Зачем</th></tr>
+        <tr><td>Аварийный пожарный насос</td><td class="num">62,5</td><td>подача воды при обесточивании основной станции</td></tr>
+        <tr><td>Рулевая машина (один агрегат)</td><td class="num">31,0</td><td>управляемость судна</td></tr>
+        <tr><td>Аварийное освещение</td><td class="num">24,0</td><td>пути эвакуации, шлюпочные посты, МО, посты управления</td></tr>
+        <tr><td>Радио- и навигационное оборудование</td><td class="num">8,0</td><td>связь и подача сигнала бедствия</td></tr>
+        <tr><td>Аварийный компрессор пускового воздуха</td><td class="num">6,0</td><td>запуск дизель-генератора и главного двигателя</td></tr>
+        <tr><td>Навигационные огни, авральная и пожарная сигнализация</td><td class="num">5,5</td><td>обозначение судна и оповещение экипажа</td></tr>
+        <tr><td>Лебёдки спуска спасательных шлюпок</td><td class="num">5,3</td><td>оставление судна</td></tr>
+        <tfoot><tr><td>Итого Σ<i>P</i> = 142,3 кВт; <i>P</i><sub>р</sub> = 1,04 Σ<i>P</i></td><td class="num">148</td><td><i>S</i><sub>р</sub> ≈ 168 кВ·А</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="calc-row"><span class="f">\(P_{\text{АДГ}} \ge P_{\text{р,ав}}\)</span> = <span style="color:#6b6b74">148 кВт</span> → принят <b>АДГ 200 кВт</b></div>
+    <div class="calc-row"><span class="f">загрузка АДГ</span> = <span style="color:#6b6b74">148/200</span> = <b>74 %</b></div>
+    <p>Аварийный дизель-генератор располагают выше палубы переборок вне
+    машинного отделения, с автономным запасом топлива и с автоматическим
+    запуском при исчезновении напряжения на главном щите. До его выхода на
+    режим (не более 45 с) питание ответственных потребителей берёт на себя
+    аккумуляторная батарея.</p>
+  </div>
+
+  <div class="step">
+    <h3>Шаг 5. Выбор числа и мощности генераторов</h3>
+    <p>Расчётные мощности режимов — исходные данные, а состав электростанции
+    выбирают по четырём правилам одновременно.</p>
+    <ol>
+      <li><b>Загрузка работающих генераторов 70…90 %.</b> Ниже 40…50 % дизель
+      работает неэкономично и закоксовывается, выше 90 % не остаётся запаса на
+      набросы нагрузки и пуск крупного двигателя.</li>
+      <li><b>Резерв.</b> При выходе из строя любого одного генератора
+      оставшиеся должны обеспечить ходовой режим.</li>
+      <li><b>Унификация.</b> Одинаковые машины упрощают параллельную работу,
+      запасные части и обучение экипажа.</li>
+      <li><b>Проверка на пуск наибольшего электродвигателя</b> — см. шаг 6.</li>
+    </ol>
+    <p>Проверим вариант <b>3 × 800 кВт</b> (1000 кВ·А при
+    \(\cos\varphi = 0{,}8\)):</p>
+    <div class="calc-row"><span class="f">ход, 1 ДГ: \(P_{\text{р}}/P_{\text{ДГ}}\)</span> = <span style="color:#6b6b74">562/800</span> = <b>70 %</b></div>
+    <div class="calc-row"><span class="f">грузовые операции, 1 ДГ</span> = <span style="color:#6b6b74">667/800</span> = <b>83 %</b></div>
+    <div class="calc-row"><span class="f">по полной мощности: \(S_{\text{р}}/S_{\text{ДГ}}\)</span> = <span style="color:#6b6b74">757/1000</span> = <b>76 %</b></div>
+    <div class="calc-row"><span class="f">манёвры, 2 ДГ (требование надёжности)</span> = <span style="color:#6b6b74">616/1600</span> = <b>39 %</b></div>
+    <div class="calc-row"><span class="f">резерв: \(P_{\text{р,макс}}/((n-1)P_{\text{ДГ}})\)</span> = <span style="color:#6b6b74">667/1600</span> = <b>42 %</b></div>
+    <p><span class="badge ok">загрузка в допустимых пределах</span>
+    <span class="badge ok">резерв обеспечен</span></p>
+    <div class="note tip">Почему ограничивает активная мощность, а не ток?
+    Потому что \(\cos\varphi\) нагрузки (0,88) выше номинального
+    \(\cos\varphi\) генератора (0,80): по току генератор загружен на 76 %, а
+    по активной мощности — на 83 %. Упор идёт в приводной дизель, а не в
+    нагрев обмоток. При обратном соотношении (много асинхронных двигателей на
+    холостом ходу, \(\cos\varphi = 0{,}6\)) ограничение перешло бы на ток, и
+    генератор пришлось бы разгружать по активной мощности.</div>
+  </div>
+
+  <div class="panel">
+    <svg viewBox="0 0 640 300" class="geo-board" style="max-width:640px" role="img"
+         aria-label="Диаграмма расчётных нагрузок по режимам работы судна с уровнями мощности одного и двух дизель-генераторов">
+      <text x="320" y="20" text-anchor="middle" style="font:600 12px system-ui;fill:#16161a">Расчётные нагрузки режимов и мощность генераторов</text>
+      <line x1="70" y1="220" x2="612" y2="220" stroke="#16161a" stroke-width="1.6"/>
+      <line x1="70" y1="220" x2="70" y2="42" stroke="#16161a" stroke-width="1.6"/>
+      <line x1="66" y1="220" x2="70" y2="220" stroke="#16161a" stroke-width="1.2"/>
+      <text x="62" y="224" text-anchor="end" style="font:11px system-ui;fill:#6b6b74">0</text>
+      <line x1="66" y1="170" x2="70" y2="170" stroke="#16161a" stroke-width="1.2"/>
+      <text x="62" y="174" text-anchor="end" style="font:11px system-ui;fill:#6b6b74">400</text>
+      <line x1="66" y1="120" x2="70" y2="120" stroke="#16161a" stroke-width="1.2"/>
+      <text x="62" y="124" text-anchor="end" style="font:11px system-ui;fill:#6b6b74">800</text>
+      <line x1="66" y1="70" x2="70" y2="70" stroke="#16161a" stroke-width="1.2"/>
+      <text x="62" y="74" text-anchor="end" style="font:11px system-ui;fill:#6b6b74">1200</text>
+      <text x="76" y="40" style="font:11px system-ui;fill:#16161a">мощность, кВт</text>
+      <!-- уровни генераторов -->
+      <line x1="70" y1="120" x2="530" y2="120" stroke="#1a7f37" stroke-width="1.4" stroke-dasharray="6 4"/>
+      <text x="536" y="117" style="font:11px system-ui;fill:#1a7f37">1 ДГ — 800 кВт</text>
+      <line x1="70" y1="130" x2="530" y2="130" stroke="#6b6b74" stroke-width="1.2" stroke-dasharray="3 4"/>
+      <text x="536" y="142" style="font:11px system-ui;fill:#6b6b74">90 % загрузки</text>
+      <!-- столбцы: ход 562, манёвры 616, стоянка 466, грузовые 667, аварийный 148 -->
+      <rect x="100" y="149.8" width="62" height="70.2" fill="#155e75" fill-opacity=".20" stroke="#155e75" stroke-width="1.5"/>
+      <text x="131" y="240" text-anchor="middle" style="font:11px system-ui;fill:#16161a">ходовой</text>
+      <text x="131" y="144" text-anchor="middle" style="font:600 11px system-ui;fill:#155e75">562</text>
+      <rect x="192" y="143" width="62" height="77" fill="#155e75" fill-opacity=".20" stroke="#155e75" stroke-width="1.5"/>
+      <text x="223" y="240" text-anchor="middle" style="font:11px system-ui;fill:#16161a">манёвры</text>
+      <text x="223" y="137" text-anchor="middle" style="font:600 11px system-ui;fill:#155e75">616</text>
+      <rect x="284" y="161.8" width="62" height="58.2" fill="#155e75" fill-opacity=".20" stroke="#155e75" stroke-width="1.5"/>
+      <text x="315" y="240" text-anchor="middle" style="font:11px system-ui;fill:#16161a">стоянка</text>
+      <text x="315" y="156" text-anchor="middle" style="font:600 11px system-ui;fill:#155e75">466</text>
+      <rect x="376" y="136.6" width="62" height="83.4" fill="#b3382e" fill-opacity=".18" stroke="#b3382e" stroke-width="1.5"/>
+      <text x="407" y="240" text-anchor="middle" style="font:11px system-ui;fill:#16161a">грузовые</text>
+      <text x="407" y="256" text-anchor="middle" style="font:11px system-ui;fill:#16161a">операции</text>
+      <text x="407" y="153" text-anchor="middle" style="font:600 11px system-ui;fill:#b3382e">667</text>
+      <rect x="468" y="201.5" width="62" height="18.5" fill="#6b6b74" fill-opacity=".22" stroke="#6b6b74" stroke-width="1.5"/>
+      <text x="499" y="240" text-anchor="middle" style="font:11px system-ui;fill:#16161a">аварийный</text>
+      <text x="499" y="256" text-anchor="middle" style="font:11px system-ui;fill:#16161a">(от АДГ)</text>
+      <text x="499" y="195" text-anchor="middle" style="font:600 11px system-ui;fill:#6b6b74">148</text>
+      <text x="70" y="286" style="font:11px system-ui;fill:#6b6b74">определяющий режим — грузовые операции; аварийный обслуживается отдельным АДГ 200 кВт</text>
+    </svg>
+    <div class="caption">Ни один режим не выходит за 90 % мощности одного
+    генератора, поэтому в море и на стоянке работает одна машина. На манёврах
+    включают вторую — не по нагрузке (39 % на двоих), а по требованию
+    надёжности: отказ единственного генератора в узкости недопустим. Аварийный
+    режим стоит отдельно, его обслуживает не основная станция, а АДГ.</div>
+  </div>
+
+  <div class="step">
+    <h3>Шаг 6. Проверка на пуск наибольшего электродвигателя</h3>
+    <p>Асинхронный двигатель с короткозамкнутым ротором при прямом пуске берёт
+    из сети ток в 5…7 раз больше номинального, причём почти чисто реактивный
+    (\(\cos\varphi_{\text{п}} \approx 0{,}3\)). Генератор на это отвечает
+    провалом напряжения. Правила ограничивают провал 15 %, а снижение частоты —
+    10 %; иначе отпадут контакторы других потребителей и станция «посыплется».</p>
+    <p>Самый мощный потребитель прототипа — грузовой (балластный) насос
+    75 кВт, \(\eta = 0{,}88\), \(\cos\varphi = 0{,}85\), кратность пускового
+    тока \(k_{\text{п}} = 6\).</p>
+    <div class="calc-row"><span class="f">\(I_{\text{ном}} = \dfrac{P}{\sqrt{3}\,U\eta\cos\varphi}\)</span> = <span style="color:#6b6b74">75 000/(1,732·400·0,88·0,85)</span> = <b>145 А</b></div>
+    <div class="calc-row"><span class="f">\(I_{\text{п}} = k_{\text{п}} I_{\text{ном}}\)</span> = <span style="color:#6b6b74">6·145</span> = <b>870 А</b></div>
+    <div class="calc-row"><span class="f">\(S_{\text{п}} = \sqrt{3}\,U I_{\text{п}}\)</span> = <span style="color:#6b6b74">1,732·400·870</span> = <b>603 кВ·А</b></div>
+    <p>Провал напряжения оценивают через сверхпереходное индуктивное
+    сопротивление генератора \(x''_d \approx 0{,}15\):</p>
+    $$\frac{\Delta U}{U} \approx \frac{S_{\text{п}}\,x''_d}{S_{\text{ном}} + S_{\text{п}}\,x''_d}$$
+    <div class="calc-row"><span class="f">\(\Delta U/U\)</span> = <span style="color:#6b6b74">603·0,15/(1000 + 603·0,15)</span> = <b>0,083 = 8,3 %</b></div>
+    <p><span class="badge ok">8,3 % меньше допустимых 15 % — пуск разрешён</span></p>
+    <div class="note">Если бы провал превысил норму, пришлось бы применить одно
+    из решений: пуск через реактор или автотрансформатор, переключение
+    «звезда — треугольник», устройство плавного пуска, преобразователь частоты
+    или запуск при двух работающих генераторах. Последний путь самый дешёвый,
+    но требует дисциплины экипажа и потому закрепляется в инструкции по
+    управлению электростанцией.</div>
+  </div>
+
+  <div class="panel">
+    <svg viewBox="0 0 640 270" class="geo-board" style="max-width:640px" role="img"
+         aria-label="Провал и восстановление напряжения на шинах главного распределительного щита при прямом пуске грузового насоса мощностью семьдесят пять киловатт">
+      <text x="320" y="20" text-anchor="middle" style="font:600 12px system-ui;fill:#16161a">Напряжение на шинах при прямом пуске насоса 75 кВт</text>
+      <line x1="80" y1="200" x2="600" y2="200" stroke="#16161a" stroke-width="1.6"/>
+      <line x1="80" y1="200" x2="80" y2="44" stroke="#16161a" stroke-width="1.6"/>
+      <text x="596" y="240" text-anchor="end" style="font:11px system-ui;fill:#16161a">время, с</text>
+      <text x="86" y="42" style="font:11px system-ui;fill:#16161a">напряжение, % номинала</text>
+      <line x1="76" y1="70" x2="80" y2="70" stroke="#16161a" stroke-width="1.2"/>
+      <text x="72" y="74" text-anchor="end" style="font:11px system-ui;fill:#6b6b74">100</text>
+      <line x1="76" y1="122" x2="80" y2="122" stroke="#16161a" stroke-width="1.2"/>
+      <text x="72" y="126" text-anchor="end" style="font:11px system-ui;fill:#6b6b74">90</text>
+      <line x1="76" y1="174" x2="80" y2="174" stroke="#16161a" stroke-width="1.2"/>
+      <text x="72" y="178" text-anchor="end" style="font:11px system-ui;fill:#6b6b74">80</text>
+      <line x1="180" y1="200" x2="180" y2="204" stroke="#16161a" stroke-width="1.2"/>
+      <text x="180" y="216" text-anchor="middle" style="font:11px system-ui;fill:#6b6b74">1</text>
+      <line x1="300" y1="200" x2="300" y2="204" stroke="#16161a" stroke-width="1.2"/>
+      <text x="300" y="216" text-anchor="middle" style="font:11px system-ui;fill:#6b6b74">2</text>
+      <line x1="420" y1="200" x2="420" y2="204" stroke="#16161a" stroke-width="1.2"/>
+      <text x="420" y="216" text-anchor="middle" style="font:11px system-ui;fill:#6b6b74">3</text>
+      <line x1="540" y1="200" x2="540" y2="204" stroke="#16161a" stroke-width="1.2"/>
+      <text x="540" y="216" text-anchor="middle" style="font:11px system-ui;fill:#6b6b74">4</text>
+      <!-- допустимый предел 85 % -->
+      <line x1="80" y1="148" x2="600" y2="148" stroke="#b3382e" stroke-width="1.4" stroke-dasharray="6 4"/>
+      <text x="596" y="144" text-anchor="end" style="font:11px system-ui;fill:#b3382e">предел Правил: 85 % (провал 15 %)</text>
+      <!-- кривая: 100 % до 1 с, провал до 91,7 %, восстановление АРН -->
+      <polyline points="86,70 138,70 140,113 160,113 200,96 250,80 320,72 420,70 560,70"
+                fill="none" stroke="#155e75" stroke-width="2.4"/>
+      <circle cx="150" cy="113" r="4" fill="#155e75"/>
+      <text x="158" y="106" style="font:11px system-ui;fill:#155e75">91,7 % — провал 8,3 %</text>
+      <text x="120" y="242" style="font:11px system-ui;fill:#6b6b74">пуск</text>
+      <line x1="140" y1="236" x2="140" y2="206" stroke="#6b6b74" stroke-width="1.2" marker-end="url(#arrE)"/>
+      <text x="170" y="258" style="font:11px system-ui;fill:#6b6b74">разгон двигателя и работа регулятора напряжения</text>
+    </svg>
+    <div class="caption">Провал длится доли секунды: как только двигатель
+    разгоняется, его ток падает до номинального, а регулятор напряжения
+    возвращает напряжение к 100 %. Опасен не сам провал, а его глубина — при
+    снижении ниже 85 % отпадают катушки магнитных пускателей других
+    механизмов, и вместо одного пуска судно получает каскадное отключение.</div>
+  </div>
+
+  <h2>Живой расчёт: состав электростанции</h2>
+  <p>Выберите режим и параметры генераторов — расчёт пересоберёт таблицу
+  нагрузок, определит нужное число работающих машин и проверит резерв и пуск
+  наибольшего двигателя.</p>
+
+  <div class="panel">
+    <div class="controls">
+      <label>Режим
+        <select id="stMode">
+          <option value="0">ходовой</option>
+          <option value="1">маневровый</option>
+          <option value="2">стояночный</option>
+          <option value="3" selected>грузовые операции</option>
+        </select></label>
+      <label>Доля включённых рефрозеток \(k_{\text{о}}\)
+        <input type="range" id="stReef" min="0" max="1" step="0.05" value="0.9">
+        <span class="readout" id="stReefOut">0,90</span></label>
+    </div>
+    <div class="controls">
+      <label>Мощность одного ДГ, кВт
+        <input type="number" id="stPdg" value="800" min="100" step="50"></label>
+      <label>Число ДГ в составе станции
+        <input type="number" id="stN" value="3" min="2" max="6" step="1"></label>
+      <label>Потери в сети \(\Delta\), %
+        <input type="number" id="stDelta" value="4" min="0" max="10" step="1"></label>
+      <button class="btn primary" id="stReset" type="button">Вернуть данные прототипа</button>
+    </div>
+    <div class="out" id="stOut"></div>
+  </div>
+
+  <h2>Проверка размерности и порядка величин</h2>
+  <div class="panel">
+    <table class="el">
+      <tr><th>Величина</th><th>Подстановка</th><th>Результат</th></tr>
+      <tr><td>\(P = P_{\text{уст}}k_{\text{з}}k_{\text{о}}/\eta\)</td><td>кВт · 1 · 1 ÷ 1</td><td>кВт ✓</td></tr>
+      <tr class="pick"><td>\(I = S/(\sqrt{3}U)\)</td><td>В·А ÷ В</td><td>А ✓</td></tr>
+      <tr><td>\(S = \sqrt{P^2+Q^2}\)</td><td>√(кВт² + квар²)</td><td>кВ·А ✓</td></tr>
+      <tr><td>\(\Delta U/U\)</td><td>кВ·А ÷ кВ·А</td><td>безразмерная доля ✓</td></tr>
+    </table>
+  </div>
+  <p>Порядок величин тоже проверяется. Для транспортного судна мощность
+  электростанции составляет 10…15 % мощности главного двигателя; здесь
+  \(2400/7800 = 31\;\%\) — заметно больше нормы, и это правильно: у
+  контейнеровоза с рефрижераторными розетками, как и у пассажирских судов и
+  ледоколов, электростанция специально усилена. Если бы при обычном сухогрузе
+  получилось 30 %, это был бы признак ошибки в таблице.</p>
+
+  <h2>Что это значит для судна</h2>
+  <p>Три дизель-генератора по 800 кВт — это не «800 кВт мощности», а <b>режим
+  эксплуатации</b>: в море и на стоянке работает одна машина с загрузкой
+  58…83 %, на манёврах — две, третья находится в резерве или в ремонте. Такой
+  состав даёт равномерную наработку (машины меняют местами по графику),
+  экономичную работу дизелей и выполнение требования Правил о резервировании.</p>
+  <p>Расчёт нагрузки — не формальность: он определяет мощность генераторов,
+  сечение шин главного распределительного щита, уставки защит, сечения
+  кабелей (см. <a href="p-cable">разбор 9</a>), суточный расход дизельного
+  топлива (см. <a href="p-fuel">разбор 3</a>) и в конечном счёте объём
+  машинного отделения. Ошибка на 20 % в сторону завышения означает лишнюю
+  тонну металла и лишний расход на долевом режиме, ошибка в сторону занижения
+  — невозможность одновременно вести грузовые операции и питать рефрижераторные
+  контейнеры.</p>
+
+  <h2>Вопросы для самопроверки</h2>
+  <details class="q"><summary>Почему установленная мощность 975 кВт, а расчётная нагрузка — только 667 кВт? Разве не опасно недодать мощности?</summary>
+  <p>Не опасно, потому что все механизмы никогда не работают одновременно и на
+  полную мощность: рулевая машина в порту стоит, грузовые насосы в море не
+  нужны, из двух компрессоров работает один. Именно это и учитывают
+  коэффициенты загрузки и одновременности. Обратный подход — выбирать
+  генераторы по установленной мощности — дал бы электростанцию вдвое большей
+  массы, работающую с загрузкой 30 %, то есть неэкономично и с ускоренным
+  износом дизелей.</p></details>
+
+  <details class="q"><summary>Как изменится расчёт, если судно получит питание с берега?</summary>
+  <p>Стояночный режим (466 кВт) снимается с судовых генераторов и переходит на
+  береговой ввод через щит питания с берега; дизель-генераторы останавливают.
+  Это требование портов с ограничениями по выбросам: судно у причала перестаёт
+  жечь топливо. Мощность берегового ввода выбирают по стояночному режиму с
+  учётом грузовых операций, то есть по большему из двух — здесь по 667 кВт.
+  Подробнее о береговом питании — в главе
+  <a href="t-modern">7 «Современные тенденции»</a>.</p></details>
+
+  <details class="q"><summary>Что произойдёт, если в грузовом режиме включить оба грузовых насоса вместо одного?</summary>
+  <p>Мощность насосов вырастет со 144,9 до 170,5 кВт, расчётная нагрузка — до
+  693 кВт, загрузка одного генератора достигнет 87 %. Формально это ещё
+  допустимо, но запаса на пуск другого крупного механизма уже не остаётся:
+  вахтенный механик обязан ввести второй генератор в параллель. Именно такие
+  ситуации закладывают в систему управления электростанцией, которая
+  автоматически запускает резервный агрегат при загрузке выше уставки.</p></details>
+
+  <details class="q"><summary>Почему аварийный дизель-генератор нельзя учитывать как резерв основной станции?</summary>
+  <p>Потому что у него другое назначение и другое расположение. Он стоит выше
+  палубы переборок вне машинного отделения именно для того, чтобы уцелеть при
+  затоплении или пожаре в МО, имеет собственный запас топлива и питает строго
+  определённый перечень потребителей через аварийный распределительный щит.
+  Использовать его для покрытия обычной нагрузки — значит израсходовать его
+  ресурс и топливо и остаться без аварийного источника в тот момент, когда он
+  понадобится.</p></details>
+
+  <details class="q"><summary>Коэффициент мощности нагрузки 0,88, а генератор рассчитан на 0,80. Не пропадает ли часть его возможностей?</summary>
+  <p>Пропадает часть возможностей по току, но не по мощности: при более высоком
+  \(\cos\varphi\) генератор отдаёт номинальную активную мощность, не достигая
+  номинального тока, и обмотки греются меньше. Ограничивает в этом случае
+  приводной дизель. Обратная ситуация хуже: при \(\cos\varphi = 0{,}6\)
+  генератор упрётся в ток, отдав всего 75 % номинальной активной мощности, а
+  дизель останется недогруженным.</p></details>
+
+  <p><a href="tasks">← Оглавление разборов</a> ·
+  <a href="t-electro">Глава 6. Электроэнергетическая система</a> ·
+  <a href="p-cable">Разбор 9. Сечение кабеля и защита →</a></p>
 </main>
+<script src="assets/station.js"></script>
 </body>
 </html>

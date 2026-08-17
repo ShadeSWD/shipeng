@@ -839,11 +839,12 @@
   <div class="given"><b>Дано:</b> группа рефконтейнеров потребляемой мощностью
   \(P = 120\) кВт, трёхфазная сеть \(U = 400\) В, \(\cos\varphi = 0{,}9\), длина
   трассы \(L = 60\) м, кабель трёхжильный медный, \(k_1 = 1{,}0\),
-  \(k_2 = 0{,}85\).</div>
+  \(k_2 = 0{,}70\) (три токоведущие жилы).</div>
   <div class="calc-row"><span class="f">\(I = \dfrac{P}{\sqrt{3}\,U\cos\varphi}\)</span> = <span style="color:#6b6b74">120 000/(1,732·400·0,9)</span> = <b>192,5 А</b></div>
-  <div class="calc-row"><span class="f">\(I_{\text{доп}} \ge \dfrac{I}{k_1 k_2}\)</span> = <span style="color:#6b6b74">192,5/(1,0·0,85)</span> = <b>226 А</b></div>
-  <p>Принимаем кабель <b>3 × 95 мм²</b> с длительно допустимым током порядка
-  240 А. Проверка падения напряжения в трёхфазной цепи:</p>
+  <div class="calc-row"><span class="f">\(I_{\text{доп}} \ge \dfrac{I}{k_1 k_2}\)</span> = <span style="color:#6b6b74">192,5/(1,0·0,70)</span> = <b>275 А</b></div>
+  <p>Принимаем кабель <b>3 × 95 мм²</b>: табличный длительно допустимый ток
+  290 А, с поправкой 0,70·290 = 203 А, что больше расчётных 192,5 А.
+  Проверка падения напряжения в трёхфазной цепи:</p>
   <div class="calc-row"><span class="f">\(\Delta U = \dfrac{\sqrt{3}\,\rho L I\cos\varphi}{S}\)</span> = <span style="color:#6b6b74">1,732·0,0175·60·192,5·0,9/95</span> = <b>3,3 В</b></div>
   <div class="calc-row"><span class="f">\(\delta U = \dfrac{\Delta U}{U}\cdot 100\,\%\)</span> = <span style="color:#6b6b74">3,3/400·100</span> = <b>0,8 %</b></div>
   <p>Проверка по термической стойкости при коротком замыкании: ток КЗ в точке
@@ -918,12 +919,12 @@
   полную мощности режима:</p>
   <div class="calc-row"><span class="f">\(P_{\text{р}} = \left(\sum P_i\right)(1+\Delta)\)</span> = <span style="color:#6b6b74">540,0·1,04</span> = <b>562 кВт</b></div>
   <div class="calc-row"><span class="f">\(Q_{\text{р}} = \left(\sum P_i \operatorname{tg}\varphi_i\right)(1+\Delta)\)</span> = <span style="color:#6b6b74">285,8·1,04</span> = <b>297 квар</b></div>
-  <div class="calc-row"><span class="f">\(S_{\text{р}} = \sqrt{P_{\text{р}}^{2}+Q_{\text{р}}^{2}}\)</span> = <span style="color:#6b6b74">√(562² + 297²)</span> = <b>636 кВ·А</b></div>
-  <div class="calc-row"><span class="f">\(\cos\varphi_{\text{р}} = \dfrac{P_{\text{р}}}{S_{\text{р}}}\)</span> = <span style="color:#6b6b74">562/636</span> = <b>0,88</b></div>
-  <div class="calc-row"><span class="f">\(I_{\text{р}} = \dfrac{S_{\text{р}}}{\sqrt{3}\,U}\)</span> = <span style="color:#6b6b74">636 000/(1,732·400)</span> = <b>918 А</b></div>
+  <div class="calc-row"><span class="f">\(S_{\text{р}} = \sqrt{P_{\text{р}}^{2}+Q_{\text{р}}^{2}}\)</span> = <span style="color:#6b6b74">√(562² + 297²)</span> = <b>635 кВ·А</b></div>
+  <div class="calc-row"><span class="f">\(\cos\varphi_{\text{р}} = \dfrac{P_{\text{р}}}{S_{\text{р}}}\)</span> = <span style="color:#6b6b74">562/635</span> = <b>0,88</b></div>
+  <div class="calc-row"><span class="f">\(I_{\text{р}} = \dfrac{S_{\text{р}}}{\sqrt{3}\,U}\)</span> = <span style="color:#6b6b74">635 000/(1,732·400)</span> = <b>917 А</b></div>
 
   <div class="ok">Загрузка одного генератора в ходовом режиме:
-  562/800 = <b>70 %</b> по активной мощности и 636/1000 = <b>64 %</b> по полной.
+  562/800 = <b>70 %</b> по активной мощности и 635/1000 = <b>64 %</b> по полной.
   Ограничивает активная мощность, потому что \(\cos\varphi\) нагрузки (0,88)
   выше номинального \(\cos\varphi\) генератора (0,80) — упор идёт в дизель, а не
   в нагрев обмоток. При обратном соотношении ограничение перешло бы на ток.</div>
@@ -978,10 +979,10 @@
   <div class="panel">
     <table class="el">
       <tr><th>Режим</th><th class="num">P<sub>р</sub>, кВт</th><th class="num">S<sub>р</sub>, кВ·А</th><th>Состав работающих генераторов</th><th class="num">Загрузка</th></tr>
-      <tr><td>Ходовой</td><td class="num">562</td><td class="num">636</td><td>1 ДГ</td><td class="num">70 %</td></tr>
-      <tr><td>Маневровый</td><td class="num">616</td><td class="num">700</td><td>2 ДГ параллельно (требование надёжности)</td><td class="num">39 %</td></tr>
-      <tr><td>Стояночный без грузовых операций</td><td class="num">465</td><td class="num">525</td><td>1 ДГ или питание с берега</td><td class="num">58 %</td></tr>
-      <tr class="pick"><td>Грузовые операции</td><td class="num">665</td><td class="num">750</td><td>1 ДГ, при пиках — 2 ДГ</td><td class="num">83 %</td></tr>
+      <tr><td>Ходовой</td><td class="num">562</td><td class="num">635</td><td>1 ДГ</td><td class="num">70 %</td></tr>
+      <tr><td>Маневровый</td><td class="num">616</td><td class="num">701</td><td>2 ДГ параллельно (требование надёжности)</td><td class="num">39 %</td></tr>
+      <tr><td>Стояночный без грузовых операций</td><td class="num">466</td><td class="num">520</td><td>1 ДГ или питание с берега</td><td class="num">58 %</td></tr>
+      <tr class="pick"><td>Грузовые операции</td><td class="num">667</td><td class="num">757</td><td>1 ДГ, при пиках — 2 ДГ</td><td class="num">83 %</td></tr>
       <tr><td>Аварийный (от АДГ 200 кВт)</td><td class="num">148</td><td class="num">168</td><td>АДГ</td><td class="num">74 %</td></tr>
     </table>
   </div>
@@ -994,8 +995,8 @@
     работает неэкономично, закоксовывается и хуже держит частоту; выше 90 % не
     остаётся запаса на пуск крупного двигателя и на набросы нагрузки.</li>
     <li><b>Резерв.</b> При выходе из строя любого одного генератора оставшиеся
-    должны обеспечить нагрузку ходового режима. У прототипа: 665 кВт при двух
-    оставшихся ДГ дают загрузку 665/1600 = 42 % — требование выполняется с
+    должны обеспечить нагрузку ходового режима. У прототипа: 667 кВт при двух
+    оставшихся ДГ дают загрузку 667/1600 = 42 % — требование выполняется с
     большим запасом.</li>
     <li><b>Унификация.</b> Одинаковые генераторы упрощают параллельную работу,
     запасные части и обучение экипажа; поэтому три машины одной мощности
