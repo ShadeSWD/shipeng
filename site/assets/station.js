@@ -1,127 +1,154 @@
-/* Живой расчёт нагрузки судовой электростанции для страницы p-station.
-   Таблица потребителей и коэффициенты те же, что в статическом разборе;
-   меняются режим, доля включённых рефрижераторных розеток и состав станции. */
+/* station.js — живой расчёт нагрузки судовой электростанции (p-station).
+ *
+ * Тонкий слой: читает поля формы, зовёт SECALC и печатает результат.
+ * Своих формул и своей таблицы потребителей здесь нет — перечень берётся из
+ * SECALC.LOADS, режимы из SECALC.MODES, расчёты из modeLoad / apparentPower /
+ * pickGenerators / startingDip (раздел 10 модуля assets/secalc.js).
+ */
 'use strict';
 (function () {
-  /* имя, P_уст (кВт), КПД, cos φ, [kз·kо по режимам: ход, манёвры, стоянка, груз] */
-  var LOADS = [
-    ['Рулевая машина', 44, 0.85, 0.80, [0.175, 0.600, 0, 0]],
-    ['Брашпиль и швартовные лебёдки', 55, 0.84, 0.75, [0, 0, 0, 0.360]],
-    ['Компрессоры пускового воздуха', 37, 0.88, 0.82, [0.350, 0.700, 0.250, 0.420]],
-    ['Насосы охлаждения ГД', 60, 0.86, 0.84, [0.600, 0.800, 0, 0]],
-    ['Топливные и масляные насосы, сепараторы', 30, 0.82, 0.80, [0.560, 0.560, 0.300, 0.360]],
-    ['Вентиляторы машинного отделения', 44, 0.88, 0.83, [0.800, 0.800, 0.175, 0.350]],
-    ['Розетки рефрижераторных контейнеров', 400, 0.90, 0.90, [0.8, 0.8, 0.8, 0.8]],
-    ['Грузовые и балластные насосы', 150, 0.88, 0.85, [0, 0, 0, 0.850]],
-    ['Вентиляция и кондиционирование жилых помещений', 60, 0.87, 0.82, [0.560, 0.490, 0.560, 0.560]],
-    ['Камбуз и бытовое оборудование', 45, 1.00, 1.00, [0.300, 0.300, 0.320, 0.420]],
-    ['Освещение и слаботочные потребители', 35, 1.00, 0.95, [0.810, 0.900, 0.900, 0.950]],
-    ['Навигация, связь, автоматика', 15, 0.90, 0.85, [0.800, 1.000, 0.800, 0.800]],
-  ];
-  var REEFER = 6;              // индекс строки рефрижераторных розеток
-  var MODES = ['ходовой', 'маневровый', 'стояночный', 'грузовые операции'];
-  var U = 400;                 // напряжение сети, В
-  var COSN = 0.8;              // номинальный cos φ генератора
-  var XD = 0.15;               // сверхпереходное сопротивление генератора
-  var PMOT = 75, ETAM = 0.88, COSM = 0.85, KP = 6;   // наибольший двигатель
-
   var $ = function (id) { return document.getElementById(id); };
-  if (!$('stMode')) return;
+  if (!$('stOut')) return;
+  var S = window.SECALC;
+  if (!S) return;
 
-  function fmt(x, d) {
-    var v = Number(x).toFixed(d === undefined ? 0 : d).split('.');
-    v[0] = v[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    return v.join(',');
+  var U = 400;        // В, напряжение сети
+  var XD = 0.15;      // сверхпереходное сопротивление генератора (учебн.)
+  var KMAX = 0.90;    // предельная загрузка генератора при подборе числа машин
+
+  /* проверяемые на пуск двигатели — паспортные данные, а не расчёт */
+  var MOTORS = {
+    pump:     { title: 'насос забортной воды 22 кВт', P: 22,  cos: 0.85, eta: 0.88 },
+    thruster: { title: 'подруливающее устройство 150 кВт', P: 150, cos: 0.85, eta: 0.92 }
+  };
+
+  /* ползунки, которыми можно подвинуть коэффициент загрузки строки */
+  var TUNED = [
+    { id: 'stKthr',   name: 'Подруливающее устройство' },
+    { id: 'stKvent',  name: 'Вентиляторы машинного отделения' },
+    { id: 'stKlight', name: 'Освещение и бытовые потребители' }
+  ];
+
+  var MODENAME = {};
+  S.MODES.forEach(function (m) { MODENAME[m.key] = m.name; });
+
+  var prevMode = null;
+
+  function n(v, d) {
+    return isFinite(v)
+      ? Number(v).toLocaleString('ru-RU',
+          { minimumFractionDigits: d, maximumFractionDigits: d })
+      : '—';
   }
-  function row(f, sub, res) {
-    return '<div class="calc-row"><span class="f">' + f + '</span> = '
-      + '<span style="color:#6b6b74">' + sub + '</span> = <b>' + res + '</b></div>';
+  function cell(k, v, note) {
+    return '<div class="cell"><span class="k">' + k + '</span><span class="v">' + v
+      + (note ? ' <span style="color:#6b6b74;font-weight:400">' + note + '</span>' : '')
+      + '</span></div>';
+  }
+
+  /* коэффициент строки из модуля — он же значение ползунка по умолчанию */
+  function moduleK(name, mode) {
+    var row = null;
+    S.LOADS.forEach(function (r) { if (r.n === name) row = r; });
+    return row ? (row.k[mode] || 0) : 0;
+  }
+
+  /* копия SECALC.LOADS с подменёнными коэффициентами выбранных строк */
+  function loadsForMode(mode) {
+    var over = {};
+    TUNED.forEach(function (t) {
+      var el = $(t.id);
+      if (el) over[t.name] = parseFloat(el.value);
+    });
+    return S.LOADS.map(function (r) {
+      if (!(r.n in over) || !isFinite(over[r.n])) return r;
+      var k = {};
+      Object.keys(r.k).forEach(function (m) { k[m] = r.k[m]; });
+      k[mode] = over[r.n];
+      return { n: r.n, P: r.P, k: k };
+    });
+  }
+
+  function syncSliders(mode) {
+    TUNED.forEach(function (t) {
+      var el = $(t.id);
+      if (el) el.value = moduleK(t.name, mode);
+    });
   }
 
   function compute() {
-    var m = +$('stMode').value;
-    var reef = parseFloat($('stReef').value);
+    var mode = $('stMode').value;
+    if (mode !== prevMode) { syncSliders(mode); prevMode = mode; }
+
+    var cos = parseFloat($('stCos').value);
     var Pdg = parseFloat(String($('stPdg').value).replace(',', '.'));
-    var n = parseInt($('stN').value, 10);
-    var delta = parseFloat(String($('stDelta').value).replace(',', '.'));
-    if (!isFinite(Pdg) || Pdg <= 0) Pdg = 800;
-    if (!isFinite(n) || n < 2) n = 2;
-    if (!isFinite(delta) || delta < 0) delta = 0;
-    $('stReefOut').textContent = fmt(reef, 2);
+    var cnt = parseInt($('stN').value, 10);
+    if (!isFinite(Pdg) || Pdg <= 0) Pdg = 160;
+    if (!isFinite(cnt) || cnt < 1) cnt = 1;
+    if (!isFinite(cos) || cos <= 0) cos = 0.80;
 
-    var sumP = 0, sumQ = 0, rows = '';
-    LOADS.forEach(function (L, idx) {
-      var k = L[4][m];
-      if (idx === REEFER) k = 0.8 * reef;
-      var p = L[1] * k / L[2];
-      var tg = Math.sqrt(1 / (L[3] * L[3]) - 1);
-      var q = p * tg;
-      sumP += p; sumQ += q;
-      rows += '<tr><td>' + L[0] + '</td><td class="num">' + fmt(L[1])
-        + '</td><td class="num">' + fmt(k, 3) + '</td><td class="num">'
-        + fmt(p, 1) + '</td><td class="num">' + fmt(q, 1) + '</td></tr>';
+    $('stCosOut').textContent = n(cos, 2);
+    TUNED.forEach(function (t) {
+      var el = $(t.id), out = $(t.id + 'Out');
+      if (el && out) out.textContent = n(parseFloat(el.value), 2);
     });
-    var kd = 1 + delta / 100;
-    var P = sumP * kd, Q = sumQ * kd;
-    var S = Math.sqrt(P * P + Q * Q);
-    var cosf = P / S;
-    var I = S * 1000 / (Math.sqrt(3) * U);
-    var Sdg = Pdg / COSN;
 
-    /* сколько машин нужно ввести: загрузка не выше 90 % ни по P, ни по S */
-    var run = 1;
-    while (run < n && (P / (run * Pdg) > 0.90 || S / (run * Sdg) > 0.90)) run++;
-    var loadP = P / (run * Pdg) * 100, loadS = S / (run * Sdg) * 100;
-    var reserve = P / ((n - 1) * Pdg) * 100;
+    var ml = S.modeLoad(loadsForMode(mode), mode);
+    var ap = S.apparentPower(ml.P, cos, U);
+    var gen = S.pickGenerators(ml.P, Pdg, cnt, KMAX);
+    var sgen = S.apparentPower(gen.running * Pdg, cos, U);
 
-    /* пуск наибольшего двигателя от работающих машин */
-    var Inom = PMOT * 1000 / (Math.sqrt(3) * U * ETAM * COSM);
-    var Sp = Math.sqrt(3) * U * KP * Inom / 1000;
-    var dU = Sp * XD / (run * Sdg + Sp * XD) * 100;
+    var mot = MOTORS[$('stMotor').value];
+    var kStart = parseFloat($('stStart').value);
+    var dip = S.startingDip({ P: mot.P, U: U, cos: mot.cos, eta: mot.eta,
+                              kStart: kStart, xd: XD, Sgen: sgen.S });
+
+    var rows = '';
+    ml.rows.forEach(function (r) {
+      rows += '<tr><td>' + r.n + '</td><td class="num">' + n(r.P, 1)
+        + '</td><td class="num">' + n(r.k, 2)
+        + '</td><td class="num">' + n(r.load, 2) + '</td></tr>';
+    });
 
     var out = '<div class="panel"><table class="el">'
-      + '<tr><th>Потребитель</th><th class="num">P<sub>уст</sub>, кВт</th>'
-      + '<th class="num">k<sub>з</sub>k<sub>о</sub></th><th class="num">P, кВт</th>'
-      + '<th class="num">Q, квар</th></tr>' + rows
-      + '<tfoot><tr><td>Сумма (режим «' + MODES[m] + '»)</td><td class="num">975</td>'
-      + '<td class="num">—</td><td class="num">' + fmt(sumP, 1) + '</td>'
-      + '<td class="num">' + fmt(sumQ, 1) + '</td></tr></tfoot></table></div>';
+      + '<tr><th>Потребитель режима «' + MODENAME[mode] + '»</th>'
+      + '<th class="num">P<sub>уст</sub>, кВт</th><th class="num">k<sub>з</sub></th>'
+      + '<th class="num">P<sub>уст</sub>k<sub>з</sub>, кВт</th></tr>' + rows
+      + '<tfoot><tr><td>Расчётная нагрузка режима</td><td class="num">—</td>'
+      + '<td class="num">—</td><td class="num">' + n(ml.P, 2)
+      + '</td></tr></tfoot></table></div>';
 
-    out += row('\\(P_{\\text{р}} = (1+\\Delta)\\sum P_i\\)',
-      fmt(kd, 2) + '·' + fmt(sumP, 1), fmt(P, 0) + ' кВт');
-    out += row('\\(Q_{\\text{р}} = (1+\\Delta)\\sum Q_i\\)',
-      fmt(kd, 2) + '·' + fmt(sumQ, 1), fmt(Q, 0) + ' квар');
-    out += row('\\(S_{\\text{р}} = \\sqrt{P_{\\text{р}}^2+Q_{\\text{р}}^2}\\)',
-      '√(' + fmt(P, 0) + '² + ' + fmt(Q, 0) + '²)', fmt(S, 0) + ' кВ·А');
-    out += row('\\(\\cos\\varphi = P_{\\text{р}}/S_{\\text{р}}\\)',
-      fmt(P, 0) + '/' + fmt(S, 0), fmt(cosf, 3));
-    out += row('\\(I_{\\text{р}} = S_{\\text{р}}/(\\sqrt{3}\\,U)\\)',
-      fmt(S * 1000, 0) + '/(1,732·' + fmt(U) + ')', fmt(I, 0) + ' А');
-    out += row('число работающих ДГ', 'загрузка не выше 90 %', fmt(run) + ' из ' + fmt(n));
-    out += row('загрузка по активной мощности',
-      fmt(P, 0) + '/(' + fmt(run) + '·' + fmt(Pdg) + ')', fmt(loadP, 0) + ' %');
-    out += row('загрузка по полной мощности',
-      fmt(S, 0) + '/(' + fmt(run) + '·' + fmt(Sdg, 0) + ')', fmt(loadS, 0) + ' %');
-    out += row('резерв: нагрузка на (n − 1) машинах',
-      fmt(P, 0) + '/(' + fmt(n - 1) + '·' + fmt(Pdg) + ')', fmt(reserve, 0) + ' %');
-    out += row('\\(\\Delta U/U\\) при пуске насоса 75 кВт',
-      fmt(Sp, 0) + '·0,15/(' + fmt(run * Sdg, 0) + ' + ' + fmt(Sp * XD, 0) + ')',
-      fmt(dU, 1) + ' %');
+    out += cell('расчётная нагрузка P<sub>р</sub>', n(ml.P, 2) + ' кВт',
+                'работает потребителей: ' + n(ml.rows.length, 0));
+    out += cell('полная мощность S', n(ap.S, 1) + ' кВ·А', 'при cos φ = ' + n(cos, 2));
+    out += cell('реактивная мощность Q', n(ap.Q, 1) + ' квар');
+    out += cell('ток сети I', n(ap.I, 1) + ' А');
+    out += cell('работает генераторов', n(gen.running, 0) + ' из ' + n(cnt, 0),
+                'предел загрузки ' + n(KMAX * 100, 0) + ' %');
+    out += cell('загрузка работающих', '<b>' + n(gen.load * 100, 1) + ' %</b>',
+                'по ' + n(Pdg, 0) + ' кВт');
+    out += cell('резерв остановленных машин', n(gen.reserve, 0) + ' кВт');
+    out += cell('пуск: ' + mot.title, n(dip.Istart, 0) + ' А',
+                'пусковой ток при ' + n(kStart, 0) + ' I<sub>н</sub>');
+    out += cell('ток работающих генераторов', n(dip.Igen, 0) + ' А',
+                n(sgen.S, 0) + ' кВ·А');
+    out += cell('провал напряжения', '<b>' + n(dip.dip * 100, 1) + ' %</b>',
+                'остаётся ' + n(dip.residual * 100, 1) + ' %');
 
     var b = [];
-    if (loadP < 40) {
-      b.push(['bad', 'загрузка ниже 40 % — дизель работает неэкономично']);
-    } else if (loadP > 90) {
-      b.push(['bad', 'перегрузка: не хватает машин в составе станции']);
+    if (!gen.enough) {
+      b.push(['bad', 'мощности не хватает: нужно больше машин или мощнее агрегат']);
+    } else if (gen.load < 0.40) {
+      b.push(['bad', 'загрузка ' + n(gen.load * 100, 1) + ' % — дизель работает неэкономично']);
     } else {
-      b.push(['ok', 'загрузка ' + fmt(loadP, 0) + ' % в допустимых пределах']);
+      b.push(['ok', 'загрузка ' + n(gen.load * 100, 1) + ' % в допустимых пределах']);
     }
-    b.push(reserve <= 100
-      ? ['ok', 'резерв обеспечен: при отказе одной машины загрузка ' + fmt(reserve, 0) + ' %']
-      : ['bad', 'резерва нет: при отказе одной машины не хватит мощности']);
-    b.push(dU <= 15
-      ? ['ok', 'пуск наибольшего двигателя: провал ' + fmt(dU, 1) + ' %']
-      : ['bad', 'провал ' + fmt(dU, 1) + ' % больше допустимых 15 %']);
+    b.push(gen.reserve > 0
+      ? ['ok', 'резерв ' + n(gen.reserve, 0) + ' кВт: есть остановленная машина']
+      : ['bad', 'резерва нет: работают все машины состава']);
+    b.push(dip.dip <= 0.15
+      ? ['ok', 'пуск проходит: провал ' + n(dip.dip * 100, 1) + ' % не больше 15 %']
+      : ['bad', 'пуск не проходит: провал ' + n(dip.dip * 100, 1) + ' % больше 15 %']);
     out += '<p>' + b.map(function (x) {
       return '<span class="badge ' + x[0] + '">' + x[1] + '</span>';
     }).join(' ') + '</p>';
@@ -131,20 +158,33 @@
       window.renderMathInElement($('stOut'), {
         delimiters: [{ left: '$$', right: '$$', display: true },
                      { left: '\\(', right: '\\)', display: false }],
-        throwOnError: false,
+        throwOnError: false
       });
     }
   }
 
-  ['stMode', 'stReef', 'stPdg', 'stN', 'stDelta'].forEach(function (id) {
-    $(id).addEventListener('input', compute);
-    $(id).addEventListener('change', compute);
+  ['stMode', 'stPdg', 'stN', 'stCos', 'stKthr', 'stKvent', 'stKlight',
+   'stMotor', 'stStart'].forEach(function (id) {
+    var el = $(id);
+    if (!el) return;
+    el.addEventListener('input', compute);
+    el.addEventListener('change', compute);
   });
-  $('stReset').addEventListener('click', function () {
-    $('stMode').value = '3'; $('stReef').value = 0.9;
-    $('stPdg').value = 800; $('stN').value = 3; $('stDelta').value = 4;
-    compute();
-  });
+
+  var reset = $('stReset');
+  if (reset) {
+    reset.addEventListener('click', function () {
+      $('stMode').value = 'hod';
+      $('stPdg').value = 160;
+      $('stN').value = 2;
+      $('stCos').value = 0.80;
+      $('stMotor').value = 'pump';
+      $('stStart').value = '6';
+      prevMode = null;                 /* заставит вернуть коэффициенты модуля */
+      compute();
+    });
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', compute);
   } else { compute(); }

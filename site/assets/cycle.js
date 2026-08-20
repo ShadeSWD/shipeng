@@ -1,9 +1,19 @@
 /* Живой расчёт цикла Ренкина для страницы p-cycle.
-   Значения энтальпии и энтропии взяты из таблиц водяного пара в узлах сетки,
-   поэтому ползунки переключают параметры дискретно — без интерполяции.
-   Все формулы продублированы в тексте страницы. */
+ *
+ * Файл — тонкий слой: он читает поля, зовёт SECALC.rankine и SECALC.carnot,
+ * печатает результат и двигает столбики. Ни одной формулы термодинамики
+ * здесь нет — они живут в assets/secalc.js.
+ *
+ * Таблицы водяного пара оставлены здесь как ДАННЫЕ: это справочные величины
+ * (энтальпия, энтропия, теплота парообразования, температура насыщения),
+ * измеренные, а не выведенные. Значения взяты в узлах сетки, поэтому
+ * ползунки переключают параметры дискретно — без интерполяции.
+ */
 'use strict';
 (function () {
+  var S = (typeof SECALC !== 'undefined') ? SECALC
+        : (typeof window !== 'undefined' ? window.SECALC : null);
+
   var P0 = [3, 4, 6, 8, 10];                 // МПа
   var T0 = [400, 450, 500, 540];             // °C
   /* h1, кДж/кг — по строкам давления, по столбцам температуры */
@@ -28,20 +38,17 @@
   var SG = [8.576, 8.473, 8.394, 8.329, 8.227, 8.149, 8.007, 7.907];
   var R = [2444.5, 2432.9, 2423.7, 2415.9, 2403.1, 2392.8, 2373.1, 2358.3];
 
-  var QN = 42700;          // кДж/кг
-  var ETA_BOILER = 0.88;
-  var ETA_PIPE = 0.98;
-  var ETA_MECH = 0.98;
-  var ETA_GEAR = 0.975;
-  var V_WATER = 0.00101;   // м³/кг
+  /* КПД элементов установки — учебные, те же, что в разборе на странице. */
+  var ETA = { boiler: 0.88, pipe: 0.98, mech: 0.98, gear: 0.975 };
+  var NE_DEFAULT = 10000;                    // кВт, отвлечённый пример
 
   var $ = function (id) { return document.getElementById(id); };
-  if (!$('rkP0')) return;
+  if (!$('rkP0') || !S) return;
 
   function fmt(x, d) {
-    var v = Number(x).toFixed(d === undefined ? 0 : d).split('.');
-    v[0] = v[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    return v.join(',');
+    return Number(x).toLocaleString('ru-RU', {
+      minimumFractionDigits: d === undefined ? 0 : d,
+      maximumFractionDigits: d === undefined ? 0 : d });
   }
   function row(f, sub, res) {
     return '<div class="calc-row"><span class="f">' + f + '</span> = '
@@ -61,7 +68,7 @@
     var i = +$('rkP0').value, j = +$('rkT0').value, k = +$('rkPk').value;
     var oi = parseFloat($('rkOi').value);
     var Ne = parseFloat(String($('rkNe').value).replace(',', '.'));
-    if (!isFinite(Ne) || Ne <= 0) Ne = 7800;
+    if (!isFinite(Ne) || Ne <= 0) Ne = NE_DEFAULT;
     var p0 = P0[i], t0 = T0[j], pk = PK[k];
     $('rkP0Out').textContent = fmt(p0) + ' МПа';
     $('rkT0Out').textContent = fmt(t0) + ' °C';
@@ -70,64 +77,53 @@
 
     var h1 = H1[i][j], s1 = S1[i][j];
     var tk = TK[k], hf = HF[k], sf = SF[k], sg = SG[k], r = R[k];
-    var x2 = (s1 - sf) / (sg - sf);
-    var wet = x2 <= 1;
-    if (x2 > 1) x2 = 1;
-    var h2 = hf + x2 * r;
-    var H0 = h1 - h2;
-    var ln = V_WATER * (p0 * 1000 - pk);
-    var q1 = h1 - hf - ln;
-    var etaT = (H0 - ln) / q1;
-    var etaE = ETA_BOILER * ETA_PIPE * etaT * oi * ETA_MECH * ETA_GEAR;
-    var ge = 3600 / (etaE * QN) * 1000;
-    var D = Ne / (H0 * oi * ETA_MECH * ETA_GEAR);
-    var B = D * q1 / (ETA_BOILER * ETA_PIPE * QN);
-    var etaK = 1 - (tk + 273.15) / (t0 + 273.15);
+
+    var c = S.rankine({ h1: h1, s1: s1, hf: hf, sf: sf, sg: sg, r: r,
+      etaOi: oi, etaBoiler: ETA.boiler, etaPipe: ETA.pipe,
+      etaMech: ETA.mech, etaGear: ETA.gear });
+    var etaK = S.carnot(t0 + 273.15, tk + 273.15);
+    var Bh = S.fuelRate(Ne, c.ge);             // т/ч
+    var wet = c.x <= 1;
+    var x = wet ? c.x : 1;
 
     bar('rkBarK', 'rkValK', etaK);
-    bar('rkBarT', 'rkValT', etaT);
-    bar('rkBarE', 'rkValE', etaE);
+    bar('rkBarT', 'rkValT', c.etaT);
+    bar('rkBarE', 'rkValE', c.etaE);
 
     var out = '';
-    out += row('\\(x_2 = \\dfrac{s_1 - s\'}{s\'\' - s\'}\\)',
+    out += row('\\(x = \\dfrac{s_1 - s\'}{s\'\' - s\'}\\)',
       '(' + fmt(s1, 3) + ' − ' + fmt(sf, 4) + ')/(' + fmt(sg, 3) + ' − ' + fmt(sf, 4) + ')',
-      fmt(x2, 3));
-    out += row('\\(h_2 = h\' + x_2 r\\)',
-      fmt(hf, 1) + ' + ' + fmt(x2, 3) + '·' + fmt(r, 1), fmt(h2, 0) + ' кДж/кг');
+      fmt(x, 4));
+    out += row('\\(h_2 = h\' + x\\,r\\)',
+      fmt(hf, 1) + ' + ' + fmt(x, 4) + '·' + fmt(r, 1), fmt(c.h2, 1) + ' кДж/кг');
     out += row('\\(H_0 = h_1 - h_2\\)',
-      fmt(h1, 1) + ' − ' + fmt(h2, 0), fmt(H0, 0) + ' кДж/кг');
-    out += row('\\(l_{\\text{н}} = v\'(p_0 - p_к)\\)',
-      '0,00101·(' + fmt(p0 * 1000) + ' − ' + fmt(pk) + ')', fmt(ln, 1) + ' кДж/кг');
-    out += row('\\(q_1 = h_1 - h\' - l_{\\text{н}}\\)',
-      fmt(h1, 1) + ' − ' + fmt(hf, 1) + ' − ' + fmt(ln, 1), fmt(q1, 0) + ' кДж/кг');
-    out += row('\\(\\eta_t = (H_0 - l_{\\text{н}})/q_1\\)',
-      '(' + fmt(H0, 0) + ' − ' + fmt(ln, 1) + ')/' + fmt(q1, 0), fmt(etaT, 3));
-    out += row('\\(\\eta_e = \\eta_{\\text{к}}\\eta_{\\text{тр}}\\eta_t\\eta_{oi}\\eta_{\\text{м}}\\eta_{\\text{зп}}\\)',
-      '0,88·0,98·' + fmt(etaT, 3) + '·' + fmt(oi, 2) + '·0,98·0,975', fmt(etaE, 3));
-    out += row('\\(g_e = 3600/(\\eta_e Q_н)\\)',
-      '3600/(' + fmt(etaE, 3) + '·42 700)', fmt(ge, 0) + ' г/(кВт·ч)');
-    out += row('\\(D = N_e/(H_0\\eta_{oi}\\eta_{\\text{м}}\\eta_{\\text{зп}})\\)',
-      fmt(Ne) + '/(' + fmt(H0, 0) + '·' + fmt(oi, 2) + '·0,98·0,975)',
-      fmt(D, 2) + ' кг/с = ' + fmt(D * 3.6, 1) + ' т/ч');
+      fmt(h1, 1) + ' − ' + fmt(c.h2, 1), fmt(c.H0, 1) + ' кДж/кг');
+    out += row('\\(q_1 = h_1 - h\'\\)',
+      fmt(h1, 1) + ' − ' + fmt(hf, 1), fmt(c.q1, 1) + ' кДж/кг');
+    out += row('\\(\\eta_t = H_0/q_1\\)',
+      fmt(c.H0, 1) + '/' + fmt(c.q1, 1), fmt(c.etaT, 4));
+    out += row('\\(\\eta_e = \\eta_t\\eta_{oi}\\eta_{\\text{к}}\\eta_{\\text{тр}}\\eta_{\\text{м}}\\eta_{\\text{зп}}\\)',
+      fmt(c.etaT, 4) + '·' + fmt(oi, 2) + '·0,88·0,98·0,98·0,975', fmt(c.etaE, 4));
+    out += row('\\(g_e = 3{,}6\\cdot10^{6}/(\\eta_e Q_н)\\)',
+      '3,6·10⁶/(' + fmt(c.etaE, 4) + '·42 700)', fmt(c.ge, 0) + ' г/(кВт·ч)');
     out += row('\\(B = N_e g_e\\)',
-      fmt(Ne) + '·' + fmt(ge, 0) + '/10³',
-      fmt(B * 3600, 0) + ' кг/ч = ' + fmt(B * 86.4, 1) + ' т/сут');
+      fmt(Ne) + '·' + fmt(c.ge, 0) + '/10⁶',
+      fmt(Bh, 2) + ' т/ч = ' + fmt(Bh * 24, 1) + ' т/сут');
     out += row('\\(\\eta_К = 1 - T_к/T_0\\)',
-      '1 − ' + fmt(tk + 273.15, 1) + '/' + fmt(t0 + 273.15, 1), fmt(etaK, 3));
+      '1 − ' + fmt(tk + 273.15, 2) + '/' + fmt(t0 + 273.15, 2), fmt(etaK, 4));
 
-    var note = 'Цикл берёт <b>' + fmt(etaT / etaK * 100, 0) + ' %</b> от своего '
-      + 'предела Карно; до выходного фланца доходит ' + fmt(etaE * 100, 1)
+    var note = 'Цикл берёт <b>' + fmt(c.etaT / etaK * 100, 0) + ' %</b> от своего '
+      + 'предела Карно; до выходного фланца доходит ' + fmt(c.etaE * 100, 1)
       + ' % теплоты топлива.';
     if (!wet) {
       note += ' При таких параметрах пар за турбиной остаётся перегретым — '
-        + 'расчёт по правилу отрезков к этому случаю неприменим, цифры даны '
-        + 'условно.';
-    } else if (x2 < 0.86) {
-      note += ' Сухость ' + fmt(x2, 3) + ' ниже допустимой: в последних '
+        + 'правило отрезков к этому случаю неприменимо, цифры даны условно.';
+    } else if (c.x < 0.86) {
+      note += ' Сухость ' + fmt(c.x, 4) + ' ниже допустимой: в последних '
         + 'ступенях начнётся эрозия лопаток, нужен промежуточный перегрев или '
         + 'влагоудаление.';
     } else {
-      note += ' Сухость ' + fmt(x2, 3) + ' приемлема для проточной части.';
+      note += ' Сухость ' + fmt(c.x, 4) + ' приемлема для проточной части.';
     }
     out += '<div class="note">' + note + '</div>';
     $('rkOut').innerHTML = out;
@@ -145,7 +141,7 @@
   });
   $('rkReset').addEventListener('click', function () {
     $('rkP0').value = 2; $('rkT0').value = 2; $('rkPk').value = 2;
-    $('rkOi').value = 0.82; $('rkNe').value = 7800;
+    $('rkOi').value = 0.82; $('rkNe').value = NE_DEFAULT;
     compute();
   });
   if (document.readyState === 'loading') {

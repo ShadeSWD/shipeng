@@ -1,25 +1,28 @@
 /* Живой расчёт газотурбинного цикла (цикл Брайтона) для страницы t-turbine.
-   Модель воздушная: k = 1,4, c_p = 1,005 кДж/(кг·К), потери в компрессоре и
-   турбине учитываются изоэнтропными КПД. Все формулы продублированы в тексте
-   страницы. */
+ *
+ * Файл — тонкий слой: читает поля, зовёт SECALC.brayton и печатает результат.
+ * Ни одной формулы термодинамики здесь нет — модель цикла (воздушная, с
+ * изоэнтропными КПД компрессора и турбины) живёт в assets/secalc.js.
+ */
 'use strict';
 (function () {
-  var K = 1.4;                 // показатель адиабаты
-  var M = (K - 1) / K;         // 0,2857
+  var S = (typeof SECALC !== 'undefined') ? SECALC
+        : (typeof window !== 'undefined' ? window.SECALC : null);
+
+  var K = 1.4;                 // показатель адиабаты (воздушная модель)
   var CP = 1.005;              // кДж/(кг·К)
-  var QN = 42700;              // низшая теплота сгорания топлива, кДж/кг
-  var ETA_MECH = 0.98;         // механический КПД
-  var ETA_GEAR = 0.975;        // КПД зубчатой передачи
+  var ETA_MECH = 0.98;         // механический КПД (учебн.)
+  var ETA_GEAR = 0.975;        // КПД зубчатой передачи (учебн.)
 
   var $ = function (id) { return document.getElementById(id); };
-  if (!$('gtPi')) return;
+  if (!$('gtPi') || !S) return;
 
   var DEF = { gtPi: 18, gtT3: 1200, gtEk: 0.86, gtEt: 0.89, gtT1: 15 };
 
   function fmt(x, d) {
-    var v = Number(x).toFixed(d === undefined ? 0 : d).split('.');
-    v[0] = v[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    return v.join(',');
+    return Number(x).toLocaleString('ru-RU', {
+      minimumFractionDigits: d === undefined ? 0 : d,
+      maximumFractionDigits: d === undefined ? 0 : d });
   }
   function row(f, sub, res) {
     return '<div class="calc-row"><span class="f">' + f + '</span> = '
@@ -27,18 +30,10 @@
   }
   function num(id) { return parseFloat($(id).value); }
 
-  /* Внутренний КПД реального цикла и удельная работа. */
-  function cycle(pi, T1, T3, ek, et) {
-    var pr = Math.pow(pi, M);
-    var T2 = T1 * (1 + (pr - 1) / ek);
-    var T4 = T3 * (1 - et * (1 - 1 / pr));
-    var lt = CP * (T3 - T4);          // работа турбины, кДж/кг
-    var lk = CP * (T2 - T1);          // работа компрессора, кДж/кг
-    var q1 = CP * (T3 - T2);          // подведённая теплота, кДж/кг
-    var ln = lt - lk;                 // полезная работа
-    var eta = q1 > 0 ? ln / q1 : 0;
-    return { pr: pr, T2: T2, T4: T4, lt: lt, lk: lk, q1: q1, ln: ln,
-             eta: eta, ideal: 1 - 1 / pr };
+  /* Один вызов модуля: все температуры, работы и КПД цикла. */
+  function cycle(pi, t1, t3, ek, et) {
+    return S.brayton({ pi: pi, t1: t1, t3: t3, k: K, cp: CP,
+      etaComp: ek, etaTurb: et });
   }
 
   function px(pi) { return 70 + pi * 13.5; }
@@ -53,19 +48,19 @@
     $('gtEtOut').textContent = fmt(et, 2);
     $('gtT1Out').textContent = fmt(t1);
 
-    var T1 = t1 + 273.15, T3 = t3 + 273.15;
-    var c = cycle(pi, T1, T3, ek, et);
+    var c = cycle(pi, t1, t3, ek, et);
+    var pr = c.T2s / c.T1;           // отношение температур в изоэнтропе
 
     /* кривая КПД по π и её максимум */
     var pts = [], best = { pi: 0, eta: -1 };
     for (var p = 4; p <= 40; p += 0.5) {
-      var e = cycle(p, T1, T3, ek, et).eta;
-      if (e < 0) e = 0;
+      var e = cycle(p, t1, t3, ek, et).etaT;
+      if (!isFinite(e) || e < 0) e = 0;
       pts.push(px(p).toFixed(1) + ',' + py(e).toFixed(1));
       if (e > best.eta) { best.eta = e; best.pi = p; }
     }
     $('gtCurve').setAttribute('points', pts.join(' '));
-    var dotY = py(Math.max(c.eta, 0));
+    var dotY = py(Math.max(c.etaT, 0));
     $('gtDot').setAttribute('cx', px(pi).toFixed(1));
     $('gtDot').setAttribute('cy', dotY.toFixed(1));
     var lab = $('gtDotLabel');
@@ -73,43 +68,42 @@
     lab.setAttribute('x', (px(pi) + (right ? 9 : -9)).toFixed(1));
     lab.setAttribute('y', (dotY - 8).toFixed(1));
     lab.setAttribute('text-anchor', right ? 'start' : 'end');
-    lab.textContent = 'π = ' + fmt(pi) + ', ηᵢ = ' + fmt(Math.max(c.eta, 0), 3);
+    lab.textContent = 'π = ' + fmt(pi) + ', ηᵢ = ' + fmt(Math.max(c.etaT, 0), 3);
 
     var out = '';
-    if (c.q1 <= 0 || c.eta <= 0) {
+    if (c.q <= 0 || c.etaT <= 0) {
       out = '<div class="note warn">При таком сочетании температура за '
         + 'компрессором достигла температуры газа перед турбиной: подводить '
         + 'теплоту негде, цикл не работает. Уменьшите π или поднимите t₃.</div>';
       $('gtOut').innerHTML = out;
       return;
     }
-    var etaE = c.eta * ETA_MECH * ETA_GEAR;
-    var ge = 3600 / (etaE * QN) * 1000;
-    out += row('\\(\\pi^{(k-1)/k}\\)', fmt(pi) + '^0,2857', fmt(c.pr, 3));
-    out += row('\\(T_2 = T_1\\left(1 + \\dfrac{\\pi^{(k-1)/k}-1}{\\eta_{\\text{к}}}\\right)\\)',
-      fmt(T1, 1) + '·(1 + (' + fmt(c.pr, 3) + ' − 1)/' + fmt(ek, 2) + ')',
+    var etaE = c.etaT * ETA_MECH * ETA_GEAR;
+    var ge = S.sfocFromEfficiency(etaE, S.FUEL.Qn);
+    out += row('\\(\\pi^{(k-1)/k}\\)', fmt(pi) + '^0,2857', fmt(pr, 3));
+    out += row('\\(T_2 = T_1 + \\dfrac{T_{2\\text{ид}} - T_1}{\\eta_{\\text{к}}}\\)',
+      fmt(c.T1, 1) + ' + (' + fmt(c.T2s, 1) + ' − ' + fmt(c.T1, 1) + ')/' + fmt(ek, 2),
       fmt(c.T2, 0) + ' К = ' + fmt(c.T2 - 273.15, 0) + ' °C');
-    out += row('\\(T_4 = T_3\\left(1 - \\eta_{\\text{т}}\\left(1 - \\pi^{-(k-1)/k}\\right)\\right)\\)',
-      fmt(T3, 1) + '·(1 − ' + fmt(et, 2) + '·(1 − 1/' + fmt(c.pr, 3) + '))',
+    out += row('\\(T_4 = T_3 - \\eta_{\\text{т}}(T_3 - T_{4\\text{ид}})\\)',
+      fmt(c.T3, 1) + ' − ' + fmt(et, 2) + '·(' + fmt(c.T3, 1) + ' − ' + fmt(c.T4s, 1) + ')',
       fmt(c.T4, 0) + ' К = ' + fmt(c.T4 - 273.15, 0) + ' °C');
     out += row('\\(l_{\\text{т}} = c_p (T_3 - T_4)\\)',
-      '1,005·(' + fmt(T3, 0) + ' − ' + fmt(c.T4, 0) + ')', fmt(c.lt, 0) + ' кДж/кг');
+      '1,005·(' + fmt(c.T3, 0) + ' − ' + fmt(c.T4, 0) + ')', fmt(c.lTurb, 0) + ' кДж/кг');
     out += row('\\(l_{\\text{к}} = c_p (T_2 - T_1)\\)',
-      '1,005·(' + fmt(c.T2, 0) + ' − ' + fmt(T1, 0) + ')', fmt(c.lk, 0) + ' кДж/кг');
+      '1,005·(' + fmt(c.T2, 0) + ' − ' + fmt(c.T1, 0) + ')', fmt(c.lComp, 0) + ' кДж/кг');
     out += row('\\(l = l_{\\text{т}} - l_{\\text{к}}\\)',
-      fmt(c.lt, 0) + ' − ' + fmt(c.lk, 0), fmt(c.ln, 0) + ' кДж/кг');
+      fmt(c.lTurb, 0) + ' − ' + fmt(c.lComp, 0), fmt(c.l, 0) + ' кДж/кг');
     out += row('\\(q_1 = c_p (T_3 - T_2)\\)',
-      '1,005·(' + fmt(T3, 0) + ' − ' + fmt(c.T2, 0) + ')', fmt(c.q1, 0) + ' кДж/кг');
+      '1,005·(' + fmt(c.T3, 0) + ' − ' + fmt(c.T2, 0) + ')', fmt(c.q, 0) + ' кДж/кг');
     out += row('\\(\\eta_i = l/q_1\\)',
-      fmt(c.ln, 0) + '/' + fmt(c.q1, 0), fmt(c.eta, 3));
-    out += row('\\(g_e = \\dfrac{3600}{\\eta_i \\eta_{\\text{м}} \\eta_{\\text{зп}} Q_н}\\)',
-      '3600/(' + fmt(c.eta, 3) + '·0,98·0,975·42 700)', fmt(ge, 0) + ' г/(кВт·ч)');
+      fmt(c.l, 0) + '/' + fmt(c.q, 0), fmt(c.etaT, 3));
+    out += row('\\(g_e = \\dfrac{3{,}6\\cdot10^{6}}{\\eta_i \\eta_{\\text{м}} \\eta_{\\text{зп}} Q_н}\\)',
+      '3,6·10⁶/(' + fmt(c.etaT, 3) + '·0,98·0,975·42 700)', fmt(ge, 0) + ' г/(кВт·ч)');
 
-    var share = c.lk / c.lt * 100;
     out += '<div class="note">Идеальный цикл при той же \\(\\pi\\) дал бы '
-      + '\\(\\eta_t = ' + fmt(c.ideal, 3) + '\\); потери в компрессоре и турбине '
-      + 'снижают КПД до ' + fmt(c.eta, 3) + '. На привод компрессора уходит <b>'
-      + fmt(share, 0) + ' %</b> мощности турбины. Максимум КПД при заданных '
+      + '\\(\\eta_t = ' + fmt(c.etaIdeal, 3) + '\\); потери в компрессоре и турбине '
+      + 'снижают КПД до ' + fmt(c.etaT, 3) + '. На привод компрессора уходит <b>'
+      + fmt(c.work * 100, 0) + ' %</b> мощности турбины. Максимум КПД при заданных '
       + 't₃ и КПД агрегатов достигается при <b>π ≈ ' + fmt(best.pi, 0)
       + '</b> и равен ' + fmt(best.eta, 3) + '.</div>';
     if (c.T4 - 273.15 > 380) {

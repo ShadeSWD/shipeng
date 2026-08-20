@@ -115,6 +115,17 @@ details.q > p { margin: 8px 0 4px; }
 /* библиография */
 ol.bib .bib-url { font: 13px system-ui, sans-serif; }
 
+/* пометка происхождения данных: первоисточник или пересказ */
+.src-1, .src-2 { display: inline-block; border-radius: 999px; padding: 1px 9px; margin-right: 6px; font: 600 12px system-ui, sans-serif; vertical-align: 2px; }
+.src-1 { background: #e3f2e7; color: #17632f; border: 1px solid #bcdcc6; }
+.src-2 { background: #eef1f6; color: #4a4a56; border: 1px solid #d5dae4; }
+
+/* строка вывода живого расчёта */
+.cell { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px dashed var(--line); font: 14.5px system-ui, sans-serif; }
+.cell:last-child { border-bottom: 0; }
+.cell .k { color: #4a4a56; }
+.cell .v { font-weight: 600; text-align: right; }
+
 @media (max-width: 720px) {
     h2 { font-size: 20px; }
     .wrap { padding: 0 14px; }
